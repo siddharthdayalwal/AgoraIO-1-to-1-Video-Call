@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>Basic Communication</title>
+  <link rel="stylesheet" href="./assets/common.css" />
+</head>
+<body class="agora-theme">
+  <div class="navbar-fixed">
+    <nav class="agora-navbar">
+      <div class="nav-wrapper agora-primary-bg valign-wrapper">
+        <h5 class="left-align">Basic Communication</h5>
+      </div>
+    </nav>
+  </div>
+  <div id="form" class="row col l12 s12">
+    <div class="row container col l12 s12">
+      <div class="col" style="min-width: 433px; max-width: 443px">
+        <div class="card" style="margin-top: 0px; margin-bottom: 0px;">
+          <div class="row card-content" style="margin-bottom: 0px;">
+              <div class="row" style="margin: 0">
+                <div class="col s12">
+                <button class="btn btn-raised btn-primary waves-effect waves-light" id="join">JOIN</button>
+                <button class="btn btn-raised btn-primary waves-effect waves-light" id="leave">LEAVE</button>
+                </div>
+              </div>
+          </div>
+        </div>
+      </div>
+      <div class="col s7">
+        <div class="video-grid" id="video">
+          <div class="video-view">
+            <div id="local_stream" class="video-placeholder"></div>
+            <div id="local_video_info" class="video-profile hide"></div>
+            <div id="video_autoplay_local" class="autoplay-fallback hide"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="vendor/jquery.min.js"></script>
+  <script src="vendor/materialize.min.js"></script>
+  <script src="https://cdn.agora.io/sdk/release/AgoraRTCSDK-2.9.0.js"></script>
+  <script>
+
+    function addView (id, show) {
+      if (!$("#" + id)[0]) {
+        $("<div/>", {
+          id: "remote_video_panel_" + id,
+          class: "video-view",
+        }).appendTo("#video");
+
+        $("<div/>", {
+          id: "remote_video_" + id,
+          class: "video-placeholder",
+        }).appendTo("#remote_video_panel_" + id);
+
+        $("<div/>", {
+          id: "remote_video_info_" + id,
+          class: "video-profile " + (show ? "" :  "hide"),
+        }).appendTo("#remote_video_panel_" + id);
+
+        $("<div/>", {
+          id: "video_autoplay_"+ id,
+          class: "autoplay-fallback hide",
+        }).appendTo("#remote_video_panel_" + id);
+      }
+    }
+    function removeView (id) {
+      if ($("#remote_video_panel_" + id)[0]) {
+        $("#remote_video_panel_"+id).remove();
+      }
+    }
+
+
+    var rtc = {
+      client: null,
+      joined: false,
+      published: false,
+      localStream: null,
+      remoteStreams: [],
+      params: {}
+    };
+
+      var option = {
+        appID: "c7e06334392e46ecb72933e665f8bf7f",
+        channel: "siddharth",
+        uid: null,
+        token: "006c7e06334392e46ecb72933e665f8bf7fIACDnnV5Cw7EzhseumMyJFgNzjeqDvBpy+R5o5EX5id6r9gwiHkAAAAAEADAFXCRHSckXgEAAQAdJyRe"
+      }
+
+      document.getElementById("join").onclick = () => {
+
+        // create client
+        rtc.client  = AgoraRTC.createClient({ mode: "rtc", codec: "h264"});
+
+        // initialize the client
+        rtc.client.init(option.appID, function () {
+          console.log("init success");
+          rtc.client.join(option.token ? option.token : null, option.channel, option.uid ? +option.uid : null, function () {
+            console.log("join channel: " + option.channel + " success, uid: " + option.uid);
+            rtc.params.uid = option.uid;
+            // create a local stream 
+            rtc.localStream = AgoraRTC.createStream({
+              streamID: rtc.params.uid,
+              audio: true,
+              video: true,
+              screen: false,
+            })
+
+            //initialize the local stream
+            rtc.localStream.init(function(){
+              console.log("init local stream success");
+              rtc.localStream.play('local_stream');
+              rtc.client.publish(rtc.localStream, function (err) {
+                console.log("publish failed");
+                console.error(err);
+              })
+            }, function (err) {
+                console.error("init local stream failed ", err);            
+            })
+          }, function (err) {
+              console.error("client joined failed", err)
+          })
+        }, (err) => {
+            console.error(err);
+        });
+
+
+        rtc.client.on("stream added", function (evt) {
+          var remoteStream = evt.stream;
+          var id = remoteStream.getId();
+          if (id !== rtc.params.uid) {
+            rtc.client.subscribe( remoteStream, function (err){
+              console.log("stream subscribe failed", err);
+            })
+          }
+          console.log('stream-added remote-uid: ', id);
+        });
+        rtc.client.on("stream-subscribed", function (evt) {
+          var remoteStream = evt.stream;
+          var id = remoteStream.getId();
+          //Add a view for the remote stream
+          addView(id);
+          //play the remote stream
+          remote.stream.play("remote_video_" + id);
+        })
+        rtc.client.on("stream revoked", function (evt) {
+          var remoteStream = evt.stream;
+          var id = remoteStream.getId();
+          // stop playing the remote stream 
+          remote.Stream.stop("remote_video_" +id);
+          // remove the view of the remote stream 
+          removeView(id);
+          console.log('stream-removed remote-uid: ', id);
+        })
+      }
+
+      document.getElementById("leave").onclick = () => {
+        //leave the channel
+        rtc.client.leave(function () {
+          //stop playing the local stream
+          rtc.localStream.stop();
+          // close the local stream
+          rtc.localStream.close();
+          // stop playing the remote stream  and remove the views
+          while (rtc.remoteStreams.lenght > 0){
+            var stream = rtc.remoteStreams.shift();
+            var id = stream.getId();
+            stream.stop();
+            removeView(id);
+          }
+          console.log("client leaves channel success");
+        }, function (err) {
+            console.log("channel leave failed");
+            console.error(err)
+        });
+
+      }
+  </script>
+</html>
+
